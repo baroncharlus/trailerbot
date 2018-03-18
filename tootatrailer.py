@@ -5,20 +5,28 @@ import requests
 import feedparser
 import os
 import sys
+import time
+import schedule
 from bs4 import BeautifulSoup
 from mastodon import Mastodon
 from io import BytesIO
 
-# get our pwd.
+# get our dir.
 bot_dir = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_post_title(entry):
+    if 'tags' in entry.keys():
         return entry['title']
+    else:
+        pass
 
 
 def get_post_link(entry):
+    if 'tags' in entry.keys():
         return entry['link']
+    else:
+        pass
 
 
 def get_post_img(entry):
@@ -27,6 +35,8 @@ def get_post_img(entry):
         _soup = BeautifulSoup(_content, 'html.parser')
 
         return _soup.find('img')['src']
+    else:
+        pass
 
 
 def init_db(dbfile):
@@ -55,23 +65,38 @@ def update_db(dbfile, title, image, link):
     '{}', '{}', '{}'
     )
     """.format(title, image, link)
+
     c.execute(query)
     conn.commit()
     conn.close()
 
 
 def query_latest_db(dbfile):
+    """
+    Get the entry most recently added to our db.
+
+    :rtype: str
+    """
+
     conn = sqlite3.connect(dbfile)
     c = conn.cursor()
     query = """
-    SELECT * FROM bringatrailer ORDER BY id DESC LIMIT 2
+    SELECT * FROM bringatrailer ORDER BY id DESC LIMIT 1
     """
+    
     c.execute(query)
-    return c.fetchall()[1]
+    return c.fetchall()[0]
     conn.close()
 
 
 def entry_exist_bool(dbfile, link):
+    """
+    Check if the latest entry from the feed already exists in our database.
+    If so, discard it.
+
+    :rtype: bool
+    """
+
     conn = sqlite3.connect(dbfile)
     c = conn.cursor()
     query = """
@@ -86,6 +111,12 @@ def entry_exist_bool(dbfile, link):
 
 
 def val_db(dbfile):
+    """
+    Debug contents of DB.
+
+    :rtype: None
+    """
+
     conn = sqlite3.connect(dbfile)
     c = conn.cursor()
     c.execute('SELECT * FROM bringatrailer ORDER BY id')
@@ -94,7 +125,27 @@ def val_db(dbfile):
     conn.close()
 
 
+def prune_db(dbfile):
+    """
+    delete DB grift.
+
+    :rtype: None
+    """
+
+    conn = sqlite3.connect(dbfile)
+    c = conn.cursor()
+    c.execute('DELETE FROM bringatrailer WHERE image = "None"')
+    conn.commit()
+    conn.close()
+
+
 def fetch_image(img_url):
+    """
+    Get raw bytes for image at img_url.
+
+    :rtype: _io.BytesIO
+    """
+
     r = requests.get(img_url)
     return BytesIO(r.content)
 
@@ -110,40 +161,54 @@ def main():
     latest_entry = d.entries[0]
 
     auction_db = os.path.join(bot_dir, 'auction_db.sqlite')
-    init_db(auction_db)
+
+    if not auction_db:
+        init_db(auction_db)
 
     title = get_post_title(latest_entry)
-    image = get_post_img(latest_entry)
     link = get_post_link(latest_entry)
+    image = get_post_img(latest_entry)
 
-    if entry_exist_bool(auction_db, link):
+    if None in (title, link, image):
+        print('latest entry is not auction')
+        pass
+    elif entry_exist_bool(auction_db, link):
+        print('latest entry already in our db')
         pass
     else:
         update_db(auction_db, title, image, link)
 
-    val_db(auction_db)
+        prune_db(auction_db)
+        val_db(auction_db)
 
-    (auction_title, img_url, auction_link) = query_latest_db(auction_db)[1:]
-    print(img_url)
+        (auction_title, img_url, auction_link) = query_latest_db(auction_db
+                                                                 )[1:]
+        print(img_url)
 
-    api = mastodon_client(client_id,
-                          client_secret,
-                          access_token,
-                          'https://fasterwhen.red')
+        api = mastodon_client(client_id,
+                              client_secret,
+                              access_token,
+                              'https://fasterwhen.red')
 
-    img_data = fetch_image(img_url)
+        img_data = fetch_image(img_url)
 
-    img_media = api.media_post(img_data, "image/jpeg")
+        img_media = api.media_post(img_data, "image/jpeg")
 
-    print(img_media)
+        print(img_media)
 
-    response = api.status_post(
-            status="Beep Boop! New Auction posted on BAT!\n{}\n{}"
-            .format(auction_title, auction_link),
-            media_ids=[img_media['id']])
+        response = api.status_post(
+                status="Beep Boop! New Auction posted on BAT!\n{}\n{}"
+                .format(auction_title, auction_link),
+                media_ids=[img_media['id']])
 
-    print(response)
+        print(response)
 
 
 if __name__ == '__main__':
+    schedule.every().hour.do(main)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
     main()
