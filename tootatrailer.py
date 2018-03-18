@@ -171,10 +171,8 @@ def main():
 
     if None in (title, link, image):
         print('latest entry is not auction')
-        pass
     elif entry_exist_bool(auction_db, link):
         print('latest entry already in our db')
-        pass
     else:
         update_db(auction_db, title, image, link)
 
