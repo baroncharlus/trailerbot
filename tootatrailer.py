@@ -203,10 +203,10 @@ def main():
 
 
 if __name__ == '__main__':
-    schedule.every().hour.do(main)
+    #schedule.every().hour.do(main)
 
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    #while True:
+    #    schedule.run_pending()
+    #    time.sleep(1)
 
     main()
