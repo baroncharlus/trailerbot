@@ -4,7 +4,6 @@ import sqlite3
 import requests
 import feedparser
 import os
-import sys
 import time
 import schedule
 from bs4 import BeautifulSoup
@@ -16,27 +15,18 @@ bot_dir = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_post_title(entry):
-    if 'tags' in entry.keys():
-        return entry['title']
-    else:
-        pass
+    return entry['title']
 
 
 def get_post_link(entry):
-    if 'tags' in entry.keys():
-        return entry['link']
-    else:
-        pass
+    return entry['link']
 
 
 def get_post_img(entry):
-    if 'tags' in entry.keys():
-        _content = entry['content'][0]['value']
-        _soup = BeautifulSoup(_content, 'html.parser')
+    _content = entry['content'][0]['value']
+    _soup = BeautifulSoup(_content, 'html.parser')
 
-        return _soup.find('img')['src']
-    else:
-        pass
+    return _soup.find('img')['src']
 
 
 def init_db(dbfile):
@@ -83,7 +73,7 @@ def query_latest_db(dbfile):
     query = """
     SELECT * FROM bringatrailer ORDER BY id DESC LIMIT 1
     """
-    
+
     c.execute(query)
     return c.fetchall()[0]
     conn.close()
@@ -125,6 +115,22 @@ def val_db(dbfile):
     conn.close()
 
 
+def del_entry(dbfile):
+    """
+    Delete most recent entry.
+
+    :rtype: None
+    """
+
+    conn = sqlite3.connect(dbfile)
+    c = conn.cursor()
+    c.execute("""
+    DELETE FROM bringatrailer WHERE id = (SELECT MAX(id) FROM bringatrailer)
+    """)
+    conn.commit()
+    conn.close()
+
+
 def prune_db(dbfile):
     """
     delete DB grift.
@@ -142,12 +148,10 @@ def prune_db(dbfile):
 def fetch_image(img_url):
     """
     Get raw bytes for image at img_url.
-
-    :rtype: _io.BytesIO
     """
 
     r = requests.get(img_url)
-    return BytesIO(r.content)
+    return r.content
 
 
 def mastodon_client(client_id, client_secret, access_token, base_url):
@@ -155,10 +159,13 @@ def mastodon_client(client_id, client_secret, access_token, base_url):
 
 
 def main():
-    client_id, client_secret, access_token = sys.argv[1:]
+    client_id = os.environ['MASTODON_CLIENT_ID']
+    client_secret = os.environ['MASTODON_CLIENT_SECRET']
+    access_token = os.environ['MASTODON_ACCESS_TOKEN']
 
     d = feedparser.parse('https://bringatrailer.com/feed/')
     latest_entry = d.entries[0]
+    print(latest_entry.keys())
 
     auction_db = os.path.join(bot_dir, 'auction_db.sqlite')
 
@@ -168,6 +175,10 @@ def main():
     title = get_post_title(latest_entry)
     link = get_post_link(latest_entry)
     image = get_post_img(latest_entry)
+
+    print(title)
+    print(link)
+    print(image)
 
     if None in (title, link, image):
         print('latest entry is not auction')
@@ -190,12 +201,10 @@ def main():
 
         img_data = fetch_image(img_url)
 
-        img_media = api.media_post(img_data, "image/jpeg")
-
-        print(img_media)
+        img_media = api.media_post(media_file=img_data, mime_type='image/jpeg')
 
         response = api.status_post(
-                status="Beep Boop! New Auction posted on BAT!\n{}\n{}"
+                status="Beep Boop! New Auction posted on BaT!\n{}\n{}"
                 .format(auction_title, auction_link),
                 media_ids=[img_media['id']])
 
@@ -203,10 +212,8 @@ def main():
 
 
 if __name__ == '__main__':
-    #schedule.every().hour.do(main)
+    schedule.every(10).minutes.do(main)
 
-    #while True:
-    #    schedule.run_pending()
-    #    time.sleep(1)
-
-    main()
+    while True:
+        schedule.run_pending()
+        time.sleep(5)
